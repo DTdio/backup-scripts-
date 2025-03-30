@@ -1,0 +1,399 @@
+-- Services
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+
+-- Variables
+local fov = 130 -- Default FOV set to 130
+local Cam = workspace.CurrentCamera
+local Player = Players.LocalPlayer
+local aimAtHead = true
+local isAiming = false
+local validNPCs = {}
+local currentTarget = nil -- Cache the current target
+local npcFolders = {} -- Store detected NPC folders
+
+-- FOV Ring Setup
+local FOVring = Drawing.new("Circle")
+FOVring.Visible = false
+FOVring.Thickness = 2
+FOVring.Color = Color3.fromRGB(128, 0, 128)
+FOVring.Filled = false
+FOVring.Radius = fov
+FOVring.Position = Cam.ViewportSize / 2
+FOVring.Transparency = 0.5
+
+-- Raycast Setup
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Blacklist
+
+-- GUI Setup (Unchanged)
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Parent = game.CoreGui
+ScreenGui.Name = "AimbotGUI"
+ScreenGui.ResetOnSpawn = false
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 120, 0, 120) -- Square 120x120
+MainFrame.Position = UDim2.new(0.5, -60, 0.5, -60) -- Centered
+MainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+MainFrame.BackgroundTransparency = 0.7
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local MainCorner = Instance.new("UICorner")
+MainCorner.CornerRadius = UDim.new(0, 10)
+MainCorner.Parent = MainFrame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(0, 120, 0, 20)
+Title.Position = UDim2.new(0, 0, 0, 0)
+Title.BackgroundTransparency = 1
+Title.Text = "DIO's AIMBOT"
+Title.TextColor3 = Color3.fromRGB(200, 0, 200)
+Title.Font = Enum.Font.GothamBlack
+Title.TextSize = 14
+Title.Parent = MainFrame
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 100, 0, 40)
+ToggleButton.Position = UDim2.new(0, 10, 0, 25)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+ToggleButton.BackgroundTransparency = 0.3
+ToggleButton.Text = "🔓 CamLock: OFF"
+ToggleButton.TextColor3 = Color3.fromRGB(255, 50, 50)
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.TextSize = 12
+ToggleButton.Parent = MainFrame
+
+local ToggleCorner = Instance.new("UICorner")
+ToggleCorner.CornerRadius = UDim.new(0, 8)
+ToggleCorner.Parent = ToggleButton
+
+local HeadToggle = Instance.new("TextButton")
+HeadToggle.Size = UDim2.new(0, 100, 0, 40)
+HeadToggle.Position = UDim2.new(0, 10, 0, 70)
+HeadToggle.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+HeadToggle.BackgroundTransparency = 0.3
+HeadToggle.Text = aimAtHead and "👤 Head" or "🧥 Torso"
+HeadToggle.TextColor3 = aimAtHead and Color3.fromRGB(200, 0, 200) or Color3.fromRGB(0, 200, 200)
+HeadToggle.Font = Enum.Font.GothamBold
+HeadToggle.TextSize = 14
+HeadToggle.Parent = MainFrame
+
+local HeadCorner = Instance.new("UICorner")
+HeadCorner.CornerRadius = UDim.new(0, 8)
+HeadCorner.Parent = HeadToggle
+
+local FOVBox = Instance.new("TextBox")
+FOVBox.Size = UDim2.new(0, 60, 0, 15)
+FOVBox.Position = UDim2.new(0, 30, 0, 105)
+FOVBox.BackgroundTransparency = 1
+FOVBox.Text = "FOV: " .. tostring(fov)
+FOVBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+FOVBox.TextTransparency = 0.5
+FOVBox.Font = Enum.Font.Gotham
+FOVBox.TextSize = 10
+FOVBox.ClearTextOnFocus = false
+FOVBox.Parent = MainFrame
+
+-- Animation Function (Unchanged)
+local function tweenButton(button, goal, duration)
+    local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = TweenService:Create(button, tweenInfo, goal)
+    tween:Play()
+end
+
+-- Particle Creation Function (Unchanged)
+local function createParticle(parent, button)
+    local particle = Instance.new("Frame")
+    particle.Size = UDim2.new(0, 5, 0, 5)
+    particle.BackgroundColor3 = Color3.fromRGB(200, 0, 200)
+    particle.BorderSizePixel = 0
+    particle.ZIndex = 2
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 5)
+    corner.Parent = particle
+    local btnPos = button.Position
+    local btnSize = button.Size
+    local randomX = btnPos.X.Offset + math.random(0, btnSize.X.Offset)
+    local randomY = btnPos.Y.Offset + math.random(0, btnSize.Y.Offset)
+    particle.Position = UDim2.new(0, randomX, 0, randomY)
+    particle.Parent = parent
+    local angle = math.random() * 2 * math.pi
+    local dx = math.cos(angle)
+    local dy = math.sin(angle)
+    local distance = 50
+    local targetX = randomX + distance * dx
+    local targetY = randomY + distance * dy
+    local targetPosition = UDim2.new(0, targetX, 0, targetY)
+    local tweenInfo = TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local positionTween = TweenService:Create(particle, tweenInfo, {Position = targetPosition})
+    local transparencyTween = TweenService:Create(particle, tweenInfo, {BackgroundTransparency = 1})
+    positionTween:Play()
+    transparencyTween:Play()
+    positionTween.Completed:Connect(function()
+        particle:Destroy()
+    end)
+end
+
+-- Dynamic NPC Detection with Dead Body Exclusion
+local function isNPC(obj)
+    if not obj:IsA("Model") then return false end
+    local humanoid = obj:FindFirstChildOfClass("Humanoid")
+    if not humanoid or humanoid.Health <= 0 then return false end -- Exclude dead bodies
+    if not obj:FindFirstChild("Head") or not obj:FindFirstChild("HumanoidRootPart") then return false end
+    if Players:GetPlayerFromCharacter(obj) then return false end
+    return true
+end
+
+local function detectNPCFolders()
+    npcFolders = {}
+    for _, folder in ipairs(workspace:GetChildren()) do
+        if folder:IsA("Folder") or folder:IsA("Model") then
+            local descendants = folder:GetDescendants()
+            for _, obj in ipairs(descendants) do
+                if isNPC(obj) then
+                    table.insert(npcFolders, folder)
+                    print("Detected NPC folder:", folder.Name)
+                    break
+                end
+            end
+        end
+    end
+    if #npcFolders == 0 then
+        print("No NPC folders found, defaulting to workspace")
+        npcFolders = {workspace} -- Fallback to workspace
+    end
+end
+
+local function initialScan()
+    validNPCs = {}
+    for _, folder in ipairs(npcFolders) do
+        for _, obj in ipairs(folder:GetDescendants()) do
+            if isNPC(obj) then
+                table.insert(validNPCs, obj)
+                print("Initial NPC found in", folder.Name, ":", obj.Name)
+            end
+        end
+    end
+    print("Total NPCs found:", #validNPCs)
+end
+
+local function onDescendantAdded(descendant)
+    if isNPC(descendant) then
+        table.insert(validNPCs, descendant)
+        print("NPC added:", descendant.Name, "Total NPCs:", #validNPCs)
+        local humanoid = descendant:FindFirstChildOfClass("Humanoid")
+        if humanoid then
+            humanoid.Died:Connect(function()
+                for i, npc in ipairs(validNPCs) do
+                    if npc == descendant then
+                        table.remove(validNPCs, i)
+                        print("NPC removed (died):", descendant.Name)
+                        break
+                    end
+                end
+            end)
+            humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+                if humanoid.Health <= 0 then
+                    for i, npc in ipairs(validNPCs) do
+                        if npc == descendant then
+                            table.remove(validNPCs, i)
+                            print("NPC removed (health <= 0):", descendant.Name)
+                            break
+                        end
+                    end
+                end
+            end)
+        end
+    end
+end
+
+local function onDescendantRemoving(descendant)
+    for i = #validNPCs, 1, -1 do
+        if validNPCs[i] == descendant then
+            table.remove(validNPCs, i)
+            print("NPC removed (despawned):", descendant.Name)
+            break
+        end
+    end
+end
+
+local function setupFolderListeners()
+    for _, folder in ipairs(npcFolders) do
+        folder.DescendantAdded:Connect(onDescendantAdded)
+        folder.DescendantRemoving:Connect(onDescendantRemoving)
+    end
+end
+
+-- Original Functions (Adapted to Exclude Dead Bodies)
+local function updateDrawings()
+    FOVring.Position = Cam.ViewportSize / 2
+    FOVring.Radius = fov * (Cam.ViewportSize.Y / 1080)
+end
+
+local function getTargetPosition(target)
+    if aimAtHead then
+        return target.Head.Position
+    else
+        return target.HumanoidRootPart.Position
+    end
+end
+
+local function getTarget()
+    local viewportCenter = Cam.ViewportSize / 2
+    raycastParams.FilterDescendantsInstances = {Player.Character or {}}
+    
+    if currentTarget and currentTarget.Humanoid and currentTarget.Humanoid.Health > 0 then -- Check health for cached target
+        local targetPos = getTargetPosition(currentTarget)
+        local screenPos, visible = Cam:WorldToViewportPoint(targetPos)
+        if visible and screenPos.Z > 0 then
+            local distance = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+            if distance < fov then
+                local direction = (targetPos - Cam.CFrame.Position).Unit * 1000
+                local ray = workspace:Raycast(Cam.CFrame.Position, direction, raycastParams)
+                if ray and ray.Instance:IsDescendantOf(currentTarget) then
+                    return currentTarget
+                end
+            end
+        end
+        currentTarget = nil
+    end
+    
+    local nearest = nil
+    local minDistance = math.huge
+    local camPos = Cam.CFrame.Position
+    
+    for _, npc in ipairs(validNPCs) do
+        if npc.Humanoid and npc.Humanoid.Health > 0 then -- Double-check health
+            local targetPos = getTargetPosition(npc)
+            if (targetPos - camPos).Magnitude <= 1000 then
+                local screenPos, visible = Cam:WorldToViewportPoint(targetPos)
+                if visible and screenPos.Z > 0 then
+                    local distance = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+                    if distance < minDistance and distance < fov then
+                        local direction = (targetPos - camPos).Unit * 1000
+                        local ray = workspace:Raycast(camPos, direction, raycastParams)
+                        if ray and ray.Instance:IsDescendantOf(npc) then
+                            minDistance = distance
+                            nearest = npc
+                        end
+                    end
+                end
+            end
+        end
+    end
+    currentTarget = nearest
+    return nearest
+end
+
+local function instantAim(targetPosition)
+    Cam.CFrame = CFrame.new(Cam.CFrame.Position, targetPosition)
+end
+
+-- Main Loop (Unchanged)
+local RenderStepped = RunService.RenderStepped
+RenderStepped:Connect(function(dt)
+    updateDrawings()
+    
+    if isAiming then
+        local target = getTarget()
+        if target then
+            local targetPosition = getTargetPosition(target)
+            instantAim(targetPosition)
+        end
+    end
+end)
+
+-- FOV Text Box Functionality (Unchanged)
+FOVBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        local inputText = FOVBox.Text
+        local newFOV = tonumber(inputText:match("%d+"))
+        if newFOV and newFOV > 0 and newFOV <= 360 then
+            fov = newFOV
+            FOVring.Radius = fov
+            FOVBox.Text = "FOV: " .. tostring(fov)
+        else
+            FOVBox.Text = "FOV: " .. tostring(fov)
+        end
+    end
+end)
+
+-- Toggle Button Functionality (Unchanged)
+ToggleButton.MouseButton1Click:Connect(function()
+    isAiming = not isAiming
+    FOVring.Visible = isAiming
+    ToggleButton.Text = isAiming and "🔒 CamLock: ON" or "🔓 CamLock: OFF"
+    local targetColor = isAiming and Color3.fromRGB(50, 255, 50) or Color3.fromRGB(255, 50, 50)
+    tweenButton(ToggleButton, {TextColor3 = targetColor}, 0.3)
+    for i = 1, 5 do
+        createParticle(MainFrame, ToggleButton)
+    end
+end)
+
+ToggleButton.MouseEnter:Connect(function()
+    tweenButton(ToggleButton, {Size = UDim2.new(0, 105, 0, 42), BackgroundTransparency = 0.1}, 0.2)
+end)
+ToggleButton.MouseLeave:Connect(function()
+    tweenButton(ToggleButton, {Size = UDim2.new(0, 100, 0, 40), BackgroundTransparency = 0.3}, 0.2)
+end)
+
+-- HeadToggle Functionality (Unchanged)
+HeadToggle.MouseButton1Click:Connect(function()
+    aimAtHead = not aimAtHead
+    HeadToggle.Text = aimAtHead and "👤 Head" or "🧥 Torso"
+    local targetColor = aimAtHead and Color3.fromRGB(200, 0, 200) or Color3.fromRGB(0, 200, 200)
+    tweenButton(HeadToggle, {TextColor3 = targetColor}, 0.3)
+    for i = 1, 5 do
+        createParticle(MainFrame, HeadToggle)
+    end
+end)
+
+HeadToggle.MouseEnter:Connect(function()
+    tweenButton(HeadToggle, {Size = UDim2.new(0, 105, 0, 42), BackgroundTransparency = 0.1}, 0.2)
+end)
+HeadToggle.MouseLeave:Connect(function()
+    tweenButton(HeadToggle, {Size = UDim2.new(0, 100, 0, 40), BackgroundTransparency = 0.3}, 0.2)
+end)
+
+-- Dragging Functionality (Unchanged)
+local dragging, dragInput, dragStart, startPos
+MainFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = MainFrame.Position
+    end
+end)
+MainFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        MainFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+MainFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+-- Cleanup (Unchanged)
+Players.PlayerRemoving:Connect(function()
+    FOVring:Remove()
+    ScreenGui:Destroy()
+end)
+
+-- Initial Setup
+detectNPCFolders() -- Find NPC folders dynamically
+initialScan() -- Scan only those folders
+setupFolderListeners() -- Set up event listeners
+MainFrame.Position = UDim2.new(0.5, -60, 0.5, 60)
+tweenButton(MainFrame, {Position = UDim2.new(0.5, -60, 0.5, -60)}, 0.5)
