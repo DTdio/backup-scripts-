@@ -1,0 +1,126 @@
+-- Services
+local Workspace = game:GetService("Workspace")
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+
+-- Variables
+local Plr = Players.LocalPlayer
+
+-- Create GUI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "ESPGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.IgnoreGuiInset = true
+ScreenGui.Parent = Plr:WaitForChild("PlayerGui")
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 100, 0, 50)
+ToggleButton.Position = UDim2.new(0.5, -50, 0.1, 0)
+ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.Text = "ESP: OFF"
+ToggleButton.BorderSizePixel = 0
+ToggleButton.Parent = ScreenGui
+
+-- Make button draggable
+local dragging, dragInput, dragStart, startPos
+
+ToggleButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = ToggleButton.Position
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+ToggleButton.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        ToggleButton.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+-- ESP functionality
+local espEnabled = false
+local highlights = {}
+local nameTags = {}
+
+local function updateESP()
+    for _, highlight in pairs(highlights) do
+        highlight:Destroy()
+    end
+    for _, nameTag in pairs(nameTags) do
+        nameTag:Destroy()
+    end
+    highlights = {}
+    nameTags = {}
+    
+    if espEnabled then
+        for _, item in pairs(Workspace.RuntimeItems:GetChildren()) do
+            local highlight = Instance.new("Highlight")
+            highlight.Parent = item
+            highlight.FillColor = Color3.fromRGB(0, 255, 0)
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.FillTransparency = 0.7
+            highlights[item] = highlight
+            
+            local billboard = Instance.new("BillboardGui")
+            billboard.Parent = item
+            billboard.Size = UDim2.new(0, 100, 0, 20)
+            billboard.StudsOffset = Vector3.new(0, 2, 0)
+            billboard.AlwaysOnTop = true
+            
+            local textLabel = Instance.new("TextLabel")
+            textLabel.Parent = billboard
+            textLabel.Size = UDim2.new(1, 0, 1, 0)
+            textLabel.BackgroundTransparency = 1
+            textLabel.Text = item.Name
+            textLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            textLabel.TextScaled = true
+            textLabel.Font = Enum.Font.SourceSansBold
+            
+            nameTags[item] = billboard
+        end
+    end
+end
+
+-- Toggle ESP with button
+ToggleButton.MouseButton1Click:Connect(function()
+    if ToggleButton.Text == "ESP: OFF" then
+        espEnabled = true
+        ToggleButton.Text = "ESP: ON"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(0, 185, 0)
+        updateESP()
+    elseif ToggleButton.Text == "ESP: ON" then
+        espEnabled = false
+        ToggleButton.Text = "ESP: OFF"
+        ToggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+        updateESP()
+    end
+end)
+
+-- Update when items change
+Workspace.RuntimeItems.ChildAdded:Connect(updateESP)
+Workspace.RuntimeItems.ChildRemoved:Connect(updateESP)
+
+-- Debug print
+print("ESP GUI loaded successfully")
